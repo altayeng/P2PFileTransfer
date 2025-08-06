@@ -1,0 +1,26 @@
+# P2P File Transfer Application Dependencies
+
+# GUI and Tray Operations
+# tkinter - Comes with Python (standard library)
+tkinterdnd2==0.3.0  # Drag and drop functionality
+pystray==0.19.4  # System tray icon
+rumps==0.4.0  # macOS menu bar application
+Pillow==10.0.1  # Image processing
+
+# Web Server
+# socket, threading, json - Python standard libraries
+
+# File Operations
+# pathlib, os - Python standard libraries
+
+# Platform Specific
+# subprocess - Python standard library (for macOS)
+
+# Additional Helper Libraries
+requests==2.31.0  # HTTP requests (for future features)
+Flask==2.3.3  # For web interface
+Flask-CORS==4.0.0  # For cross-origin requests
+
+# Development and Testing
+# pytest==7.4.2  # Test framework (optional)
+# black==23.7.0  # Code formatter (optional)
