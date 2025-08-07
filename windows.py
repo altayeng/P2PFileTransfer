@@ -37,10 +37,13 @@ from flask import Flask, render_template_string, request, jsonify, send_file
 from flask_cors import CORS
 from datetime import datetime
 import uuid
+import winreg
 
 class P2PFileTransfer:
     def __init__(self):
         self.web_port = 4848
+        self.discovery_port = 8888
+        self.file_port = 9999
         self.device_name = socket.gethostname()
         self.devices = {}
         self.server_socket = None
@@ -65,6 +68,36 @@ class P2PFileTransfer:
         # Start web server
         self.setup_flask_app()
         self.start_web_server_monitor()
+        
+        # Windows auto-start setup
+        self.setup_autostart()
+        
+    def setup_autostart(self): 
+        try:
+            # Get current executable path
+            if getattr(sys, 'frozen', False):
+                # Running as exe
+                exe_path = sys.executable
+            else:
+                # Running as python script
+                exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            
+            # Registry key for startup
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            key_name = "P2PFileTransfer"
+            
+            try:
+                # Open registry key
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                # Set the value
+                winreg.SetValueEx(key, key_name, 0, winreg.REG_SZ, exe_path)
+                winreg.CloseKey(key)
+                print(f"Auto-start enabled: {exe_path}")
+            except Exception as e:
+                print(f"Auto-start setup error: {e}")
+                
+        except Exception as e:
+            print(f"Auto-start setup failed: {e}")
         
     def create_icon(self):
         """Tray simgesi oluştur"""
@@ -489,12 +522,10 @@ class P2PFileTransfer:
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
-        
-        // Sayfa yüklendiğinde verileri getir
+         
         loadPendingFiles();
         loadTransferHistory();
-        
-        // Her 5 saniyede bir verileri güncelle
+         
         setInterval(() => {
             loadPendingFiles();
             loadTransferHistory();
@@ -511,7 +542,7 @@ class P2PFileTransfer:
                 self.discovery_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                 self.discovery_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                # Discovery port removed
+                self.discovery_socket.bind(('', self.discovery_port))
                 
                 while self.running:
                     try:
@@ -524,7 +555,7 @@ class P2PFileTransfer:
                                 'type': 'response',
                                 'device_name': self.device_name,
                                 'ip': self.get_local_ip(),
-                                # Port removed
+                                'port': self.file_port
                             }
                             self.discovery_socket.sendto(
                                 json.dumps(response).encode(), addr
@@ -553,7 +584,7 @@ class P2PFileTransfer:
             try:
                 self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                # Server port removed
+                self.server_socket.bind(('', self.file_port))
                 self.server_socket.listen(5)
                 
                 while self.running:
@@ -670,7 +701,7 @@ class P2PFileTransfer:
             
             broadcast_socket.sendto(
                 json.dumps(message).encode(),
-                # Discovery port removed
+                ('<broadcast>', self.discovery_port)
             )
             broadcast_socket.close()
         except Exception as e:
@@ -679,18 +710,6 @@ class P2PFileTransfer:
     def get_local_ip(self):
         """Yerel IP adresini al"""
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
-        except:
-            return "127.0.0.1"
-    
-    def get_local_ip(self):
-        """Yerel IP adresini al"""
-        try:
-            import socket
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
@@ -768,14 +787,66 @@ class P2PFileTransfer:
         if self.root:
             self.root.quit()
     
+    def is_autostart_enabled(self):
+        """Otomatik başlatma aktif mi kontrol et"""
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            key_name = "P2PFileTransfer"
+            
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(key, key_name)
+            winreg.CloseKey(key)
+            return True
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return False
+    
+    def toggle_autostart(self):
+        """Otomatik başlatmayı aç/kapat"""
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            key_name = "P2PFileTransfer"
+            
+            if self.is_autostart_enabled():
+                # Disable autostart
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(key, key_name)
+                    winreg.CloseKey(key)
+                    print("Auto-start disabled")
+                except Exception as e:
+                    print(f"Error disabling auto-start: {e}")
+            else:
+                # Enable autostart
+                if getattr(sys, 'frozen', False):
+                    exe_path = sys.executable
+                else:
+                    exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+                
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                    winreg.SetValueEx(key, key_name, 0, winreg.REG_SZ, exe_path)
+                    winreg.CloseKey(key)
+                    print("Auto-start enabled")
+                except Exception as e:
+                    print(f"Error enabling auto-start: {e}")
+                    
+            # Update tray menu
+            if self.tray_icon:
+                self.tray_icon.menu = self.create_tray_menu()
+                
+        except Exception as e:
+            print(f"Toggle autostart error: {e}")
+    
     def create_tray_menu(self):
         """Tray menüsü oluştur"""
         local_ip = self.get_local_ip()
         return pystray.Menu(
-            pystray.MenuItem(f"Web Arayüzü: http://{local_ip}:4848", lambda: None),
-            pystray.MenuItem(f"Yerel Erişim: http://127.0.0.1:4848", lambda: None),
+            pystray.MenuItem(f"Web Arayüzü: http://{local_ip}:{self.web_port}", lambda: None),
+            pystray.MenuItem(f"Yerel Erişim: http://127.0.0.1:{self.web_port}", lambda: None),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Cihazları Yenile", self.discover_devices),
+            pystray.MenuItem("Otomatik Başlatma", self.toggle_autostart, checked=lambda item: self.is_autostart_enabled()),
             pystray.MenuItem("Çıkış", self.quit_app)
         )
     
